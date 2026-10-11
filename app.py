@@ -436,7 +436,7 @@ if submitted:
                         f"• ({readable(left)}, {readable(right)}): {direction}"
                     )
 
-                show_limits(expr, pieces)
+                 show_limits(expr, pieces)
 
                  st.markdown("#### Đồ thị")
                 make_plot(expr, survey_domain, plot_min, plot_max, roots_for_plot)
