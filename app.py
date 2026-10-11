@@ -388,13 +388,15 @@ if submitted:
         st.latex(r"y' = " + sp.latex(derivative))
         st.latex(r"y'' = " + sp.latex(second_derivative))
 
-        roots, root_note = solve_critical_points(derivative, survey_domain)
+               roots, root_note = solve_critical_points(derivative, survey_domain)
+
         if root_note:
             st.warning(root_note)
             roots_for_plot = []
         else:
             roots_for_plot = roots
             st.markdown("#### Điểm tới hạn và cực trị")
+
             if not roots:
                 st.write("Không có nghiệm y′ = 0 trong miền đang khảo sát.")
             else:
