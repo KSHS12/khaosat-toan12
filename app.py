@@ -444,7 +444,7 @@ if submitted:
                 "Đồ thị là hình vẽ số để minh họa; hãy đối chiếu bảng biến thiên "
                 "với bài giải khi dùng làm tài liệu giảng dạy."
            )
-...   except (ValueError, SyntaxError, ZeroDivisionError) as exc:
+...            except (ValueError, SyntaxError, ZeroDivisionError) as exc:
 ...          st.error(f"Không xử lý được biểu thức: {exc}")
 ...   except Exception as exc:
 ...          st.error(f"Có lỗi khi khảo sát hàm: {exc}")
