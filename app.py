@@ -438,10 +438,10 @@ if submitted:
 
                 show_limits(expr, pieces)
 
-                     st.markdown("#### Đồ thị")
+                 st.markdown("#### Đồ thị")
                 make_plot(expr, survey_domain, plot_min, plot_max, roots_for_plot)
 
-                    st.info(
+                 st.info(
                        "Đạo hàm, giới hạn và nghiệm được tính bằng SymPy. "
                        "Đồ thị là hình vẽ số để minh họa; hãy đối chiếu bảng biến thiên "
                        "với bài giải khi dùng làm tài liệu giảng dạy."
