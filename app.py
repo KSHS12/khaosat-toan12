@@ -413,15 +413,13 @@ if submitted:
         else:
             for part in pieces:
                 relevant_roots = []
-                if not roots:
-    st.write("Không có nghiệm y′ = 0 trong miền đang khảo sát.")
-else:
-    for root in roots:
-        value = sp.simplify(expr.subs(x, root))
-        st.write(
+                if not roots: st.write("Không có nghiệm y′ = 0 trong miền đang khảo sát.")
+        else: for root in roots:
+            value = sp.simplify(expr.subs(x, root))
+            st.write(
             f"x = **{readable(root)}**, "
             f"f(x) = **{readable(value)}**"
-        )
+            )
                         try:
 ...                             if part.contains(root) is sp.true:
 ...                                 relevant_roots.append(root)
