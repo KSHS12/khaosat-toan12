@@ -423,7 +423,11 @@ if submitted:
                          f"x = **{readable(root)}**, "
                          f"f(x) = **{readable(value)}**"
                          )
-                     pass
+                     try:
+                            if part.contains(root) is sp.true:
+                                relevant_roots.append(root)
+                        except Exception:
+                            pass
 ...                 boundaries = [part.start, *relevant_roots, part.end]
 ...                 st.write(f"**Trên khoảng {readable(part)}:**")
 ... 
