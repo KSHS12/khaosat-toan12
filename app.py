@@ -414,13 +414,6 @@ if submitted:
             for part in pieces:
                 relevant_roots = []
                 if not roots: st.write("Không có nghiệm y′ = 0 trong miền đang khảo sát.")
-                else: for root in roots:
-                          try:
-...                             if part.contains(root) is sp.true:
-...                                 relevant_roots.append(root)
-...                         except Exception:
-...                             pass
-... 
 ...                 boundaries = [part.start, *relevant_roots, part.end]
 ...                 st.write(f"**Trên khoảng {readable(part)}:**")
 ... 
