@@ -388,8 +388,7 @@ if submitted:
         st.latex(r"y' = " + sp.latex(derivative))
         st.latex(r"y'' = " + sp.latex(second_derivative))
 
-               roots, root_note = solve_critical_points(derivative, survey_domain)
-
+        roots, root_note = solve_critical_points(derivative, survey_domain)
         if root_note:
             st.warning(root_note)
             roots_for_plot = []
