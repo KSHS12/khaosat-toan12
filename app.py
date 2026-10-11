@@ -451,5 +451,5 @@ if submitted:
 ...                except Exception as exc:
 ...                    st.error(f"Có lỗi khi khảo sát hàm: {exc}")
 ... 
-...           else:
-...               st.info("Nhập hàm số, chọn khoảng nếu cần, rồi nhấn “Khảo sát hàm số”.")
+...             else:
+...                 st.info("Nhập hàm số, chọn khoảng nếu cần, rồi nhấn “Khảo sát hàm số”.")
