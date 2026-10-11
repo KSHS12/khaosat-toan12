@@ -418,12 +418,12 @@ if submitted:
                     st.write("Không có nghiệm y′ = 0 trong miền đang khảo sát.")
                 else:
                   for root in roots:
-                  value = sp.simplify(expr.subs(x, root))
-                  st.write(
-                  f"x = **{readable(root)}**, "
-                  f"f(x) = **{readable(value)}**"
-                  )
-                  pass
+                         value = sp.simplify(expr.subs(x, root))
+                         st.write(
+                         f"x = **{readable(root)}**, "
+                         f"f(x) = **{readable(value)}**"
+                         )
+                     pass
 ...                 boundaries = [part.start, *relevant_roots, part.end]
 ...                 st.write(f"**Trên khoảng {readable(part)}:**")
 ... 
