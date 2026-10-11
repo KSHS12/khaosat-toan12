@@ -388,19 +388,19 @@ if submitted:
         st.latex(r"y' = " + sp.latex(derivative))
         st.latex(r"y'' = " + sp.latex(second_derivative))
 
-        roots, root_note = solve_critical_points(derivative, survey_domain)
+               roots, root_note = solve_critical_points(derivative, survey_domain)
 
         if root_note:
             st.warning(root_note)
             roots_for_plot = []
         else:
-            roots_for_plot = roots
+            roots_for_plot = roots or []
             st.markdown("#### Điểm tới hạn và cực trị")
 
-            if not roots:
+            if not roots_for_plot:
                 st.write("Không có nghiệm y′ = 0 trong miền đang khảo sát.")
             else:
-                for root in roots:
+                for root in roots_for_plot:
                     value = sp.simplify(expr.subs(x, root))
                     st.write(
                         f"x = **{readable(root)}**, "
@@ -409,49 +409,44 @@ if submitted:
 
         pieces = intervals_in(survey_domain)
         st.markdown("#### Chiều biến thiên")
+
         if not pieces:
             st.write("Không biểu diễn được miền khảo sát thành các khoảng.")
         else:
             for part in pieces:
                 relevant_roots = []
-                if not roots:
-                    st.write("Không có nghiệm y′ = 0 trong miền đang khảo sát.")
-                else:
-                  for root in roots:
-                         value = sp.simplify(expr.subs(x, root))
-                         st.write(
-                         f"x = **{readable(root)}**, "
-                         f"f(x) = **{readable(value)}**"
-                         )
-                     try:
-                            if part.contains(root) is sp.true:
-                                relevant_roots.append(root)
-                        except Exception:
-                            pass
-...                 boundaries = [part.start, *relevant_roots, part.end]
-...                 st.write(f"**Trên khoảng {readable(part)}:**")
-... 
-...                 if len(boundaries) == 2 and derivative == 0:
-...                     st.write("Hàm số không đổi trên khoảng này.")
-...                     continue
-... 
-...                 for left, right in zip(boundaries[:-1], boundaries[1:]):
-...                     sample = interval_sample(left, right)
-...                     direction = test_sign(derivative, sample)
-...                     st.write(
-...                         f"• ({readable(left)}, {readable(right)}): {direction}"
-...                     )
-... 
-...         show_limits(expr, pieces)
-... 
-...         st.markdown("#### Đồ thị")
-...         make_plot(expr, survey_domain, plot_min, plot_max, roots_for_plot)
-... 
-...         st.info(
-...             "Đạo hàm, giới hạn và nghiệm được tính bằng SymPy. "
-...             "Đồ thị là hình vẽ số để minh họa; hãy đối chiếu bảng biến thiên "
-...             "với bài giải khi dùng làm tài liệu giảng dạy."
-...         )
+
+                for root in roots_for_plot:
+                    try:
+                        if part.contains(root) is sp.true:
+                            relevant_roots.append(root)
+                    except Exception:
+                        pass
+
+                boundaries = [part.start, *relevant_roots, part.end]
+                st.write(f"**Trên khoảng {readable(part)}:**")
+
+                if len(boundaries) == 2 and sp.simplify(derivative) == 0:
+                    st.write("Hàm số không đổi trên khoảng này.")
+                    continue
+
+                for left, right in zip(boundaries[:-1], boundaries[1:]):
+                    sample = interval_sample(left, right)
+                    direction = test_sign(derivative, sample)
+                    st.write(
+                        f"• ({readable(left)}, {readable(right)}): {direction}"
+                    )
+
+        show_limits(expr, pieces)
+
+        st.markdown("#### Đồ thị")
+        make_plot(expr, survey_domain, plot_min, plot_max, roots_for_plot)
+
+        st.info(
+            "Đạo hàm, giới hạn và nghiệm được tính bằng SymPy. "
+            "Đồ thị là hình vẽ số để minh họa; hãy đối chiếu bảng biến thiên "
+            "với bài giải khi dùng làm tài liệu giảng dạy."
+        )
 ... 
 ...     except (ValueError, SyntaxError, ZeroDivisionError) as exc:
 ...         st.error(f"Không xử lý được biểu thức: {exc}")
