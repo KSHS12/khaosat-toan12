@@ -1,5 +1,3 @@
-Python 3.15.0 (tags/v3.15.0:d220409, Oct  9 2026, 11:55:56) [MSC v.1951 64 bit (AMD64)] on win32
-Enter "help" below or click "Help" above for more information.
 import ast
 import math
 import warnings
