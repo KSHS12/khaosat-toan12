@@ -435,7 +435,6 @@ if submitted:
                     st.write(
                         f"• ({readable(left)}, {readable(right)}): {direction}"
                     )
-
         show_limits(expr, pieces)
         st.markdown("#### Đồ thị")
         make_plot(expr, survey_domain, plot_min, plot_max, roots_for_plot)
@@ -448,6 +447,5 @@ if submitted:
         st.error(f"Không xử lý được biểu thức: {exc}")
     except Exception as exc:
         st.error(f"Có lỗi khi khảo sát hàm: {exc}")
-... 
 else:
     st.info("Nhập hàm số, chọn khoảng nếu cần, rồi nhấn “Khảo sát hàm số”.")
