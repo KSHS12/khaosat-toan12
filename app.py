@@ -95,8 +95,17 @@ def text_value(value):
         return "−∞"
 
     result = sp.sstr(value)
+
+    superscript = str.maketrans(
+        "0123456789-+/",
+        "⁰¹²³⁴⁵⁶⁷⁸⁹⁻⁺⁄"
+    )
+    result = re.sub(
+        r"\*\*\(?([-+]?\d+(?:/\d+)?)\)?",
+        lambda match: match.group(1).translate(superscript),
+        result,
+    )
     result = re.sub(r"sqrt\(([^()]*)\)", r"√(\1)", result)
-    result = result.replace("**2", "²").replace("**3", "³")
     return result
 
 def format_domain(domain):
@@ -423,7 +432,7 @@ def analyze(function_text, use_interval, left, right):
         f"D = {format_domain(domain)}",
         "",
         "2. SỰ BIẾN THIÊN",
-        f"Đạo hàm: y′ = {sp.sstr(derivative)}",
+        f"Đạo hàm: y′ = {text_value(derivative)}",
     ]
 
     if critical_roots:
@@ -803,8 +812,35 @@ if request:
         st.code("\n".join(report[:2]) if len(report) > 1 else report[0], language="text")
 
         st.markdown("### 2. Các bước khảo sát")
-        st.code("\n".join(report[2:]), language="text")
+        for line in report[2:]:
+            limit_match = re.fullmatch(
+                r"x → (.+?)(?: \(bên (trái|phải)\))?: f\(x\) → (.+)",
+                line,
+            )
 
+            if limit_match:
+                point, side, value = limit_match.groups()
+
+                def tex_token(text):
+                    return (
+                        text.replace("−∞", r"-\infty")
+                        .replace("+∞", r"+\infty")
+                        .replace("∞", r"\infty")
+                    )
+
+                point_tex = tex_token(point)
+                value_tex = tex_token(value)
+
+                if side == "trái":
+                    point_tex += r"^{-}"
+                elif side == "phải":
+                    point_tex += r"^{+}"
+
+                st.latex(
+                    rf"\lim_{{x\to {point_tex}}} f(x) = {value_tex}"
+                )
+            else:
+                st.write(line)
         st.markdown("### 3. Bảng biến thiên đầy đủ")
         st.markdown(
             """
