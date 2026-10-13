@@ -230,7 +230,7 @@ def make_variation_table(expr, derivative, domain, critical_roots):
     rows = [[], [], []]
 
     def pretty(value):
-    return text_value(value)
+        return text_value(value)
 
     def add_cell(row, content, css=""):
         class_part = f' class="{css}"' if css else ""
