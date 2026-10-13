@@ -179,89 +179,109 @@ def make_variation_table(expr, derivative, domain, critical_roots):
     if not pieces:
         return "<p>Chưa dựng được bảng biến thiên cho miền này.</p>"
 
-    critical_keys = {sp.sstr(root) for root in critical_roots}
+    point_map = {}
+    for part in pieces:
+        point_map[sp.sstr(part.start)] = part.start
+        point_map[sp.sstr(part.end)] = part.end
+
+    for root in critical_roots:
+        point_map[sp.sstr(root)] = root
+
+    points = sorted(
+        point_map.values(),
+        key=lambda p: (
+            -math.inf if p is -sp.oo
+            else math.inf if p is sp.oo
+            else real_float(p)
+        ),
+    )
+
+    root_keys = {sp.sstr(root) for root in critical_roots}
     rows = [[], [], []]
 
-    def add_separator():
-        for row in rows:
-            row.append('<td class="separator">║</td>')
+    def pretty(value):
+        if value is None:
+            return "?"
+        return (
+            sp.sstr(value)
+            .replace("-oo", "−∞")
+            .replace("oo", "+∞")
+        )
 
-    for piece_index, part in enumerate(pieces):
-        if piece_index:
-            add_separator()
+    def add_cell(row, content, css=""):
+        class_part = f' class="{css}"' if css else ""
+        row.append(f"<td{class_part}>{content}</td>")
 
-        inside = []
-        for root in critical_roots:
+    for index, point in enumerate(points):
+        point_is_in_domain = False
+        if point not in (-sp.oo, sp.oo):
             try:
-                if part.contains(root) is sp.true:
-                    inside.append(root)
+                point_is_in_domain = domain.contains(point) is sp.true
             except Exception:
                 pass
 
-        points = [part.start] + sorted(inside, key=lambda value: real_float(value)) + [part.end]
+        is_critical = sp.sstr(point) in root_keys
+        is_excluded = point not in (-sp.oo, sp.oo) and not point_is_in_domain
 
-        for index, point in enumerate(points):
-            if point is -sp.oo:
-                x_label = "−∞"
-            elif point is sp.oo:
-                x_label = "+∞"
+        if point is -sp.oo:
+            x_text = "−∞"
+            y_text = pretty(safe_limit(expr, -sp.oo))
+        elif point is sp.oo:
+            x_text = "+∞"
+            y_text = pretty(safe_limit(expr, sp.oo))
+        else:
+            x_text = pretty(point)
+            if point_is_in_domain:
+                y_text = pretty(sp.simplify(expr.subs(x, point)))
             else:
-                x_label = text_value(point)
+                left_limit = safe_limit(expr, point, "-")
+                right_limit = safe_limit(expr, point, "+")
+                y_text = f"{pretty(left_limit)} │ {pretty(right_limit)}"
 
-            excluded = False
-            if point not in (-sp.oo, sp.oo):
-                try:
-                    excluded = domain.contains(point) is not sp.true
-                except Exception:
-                    excluded = False
+        x_label = html.escape(x_text)
+        if is_excluded:
+            x_label += "<br><small>không xác định</small>"
 
-            rows[0].append(
-                '<td class="point">'
-                + html.escape(x_label)
-                + ("<br><small>không xác định</small>" if excluded else "")
-                + "</td>"
-            )
+        add_cell(rows[0], x_label, "point pole" if is_excluded else "point")
 
-            if sp.sstr(point) in critical_keys:
-                rows[1].append('<td class="zero">0</td>')
-            elif excluded:
-                rows[1].append('<td class="zero">||</td>')
-            else:
-                rows[1].append('<td></td>')
+        if is_critical:
+            add_cell(rows[1], "0", "zero")
+        elif is_excluded:
+            add_cell(rows[1], "║", "pole")
+        else:
+            add_cell(rows[1], "", "point")
 
-            side = "+" if point == part.start else "-"
-            y_value = endpoint_value(expr, domain, point, side)
-            rows[2].append(
-                '<td class="value">' + html.escape(format_limit(y_value)) + "</td>"
-            )
+        add_cell(rows[2], html.escape(y_text), "pole" if is_excluded else "value")
 
-            if index < len(points) - 1:
-                next_point = points[index + 1]
-                sample = sample_between(point, next_point)
-                sign = sign_of(derivative, sample)
-                sign_text = "+" if sign == 1 else "−" if sign == -1 else "?"
-                arrow = "↗" if sign == 1 else "↘" if sign == -1 else "→"
+        if index == len(points) - 1:
+            continue
 
-                rows[0].append('<td class="interval"></td>')
-                rows[1].append(
-                    '<td class="interval"><strong>' + sign_text + "</strong></td>"
-                )
-                rows[2].append(
-                    '<td class="interval arrow">' + arrow + "</td>"
-                )
+        next_point = points[index + 1]
+        sample = sample_between(point, next_point)
 
-    return """
-    <div class="bbt-wrap">
-      <table class="bbt">
-        <tbody>
-          <tr><th>x</th>""" + "".join(rows[0]) + """</tr>
-          <tr><th>y′</th>""" + "".join(rows[1]) + """</tr>
-          <tr><th>y</th>""" + "".join(rows[2]) + """</tr>
-        </tbody>
-      </table>
-    </div>
-    """
+        try:
+            sample_in_domain = domain.contains(sp.Float(sample)) is sp.true
+        except Exception:
+            sample_in_domain = False
 
+        if sample_in_domain:
+            sign = sign_of(derivative, sample)
+            sign_text = "+" if sign == 1 else "−" if sign == -1 else "?"
+            arrow = "↗" if sign == 1 else "↘" if sign == -1 else "→"
+            add_cell(rows[0], "", "interval")
+            add_cell(rows[1], f"<strong>{sign_text}</strong>", "interval")
+            add_cell(rows[2], arrow, "interval arrow")
+        else:
+            for row in rows:
+                add_cell(row, "║", "separator")
+
+    return (
+        '<div class="bbt-wrap"><table class="bbt"><tbody>'
+        f"<tr><th>x</th>{''.join(rows[0])}</tr>"
+        f"<tr><th>y′</th>{''.join(rows[1])}</tr>"
+        f"<tr><th>y</th>{''.join(rows[2])}</tr>"
+        "</tbody></table></div>"
+    )
 
 # ---------- Khảo sát ----------
 
@@ -443,6 +463,7 @@ def analyze(function_text, use_interval, left, right):
 def draw_plot(expr, domain, critical_roots, asymptote_specs, xmin, xmax):
     fig = go.Figure()
     function = sp.lambdify(x, expr, modules=["numpy"])
+    samples = []
 
     for part in intervals_in(domain):
         start = -math.inf if part.start is -sp.oo else real_float(part.start)
@@ -456,18 +477,27 @@ def draw_plot(expr, domain, critical_roots, asymptote_specs, xmin, xmax):
         if a >= b:
             continue
 
-        span = max(b - a, 1.0)
-        if part.start not in (-sp.oo, sp.oo) and abs(a - start) < span * 1e-7:
-            if domain.contains(part.start) is not sp.true:
-                a += span * 1e-5
-        if part.end not in (-sp.oo, sp.oo) and abs(b - end) < span * 1e-7:
-            if domain.contains(part.end) is not sp.true:
-                b -= span * 1e-5
+        width = max(xmax - xmin, 1.0)
+        delta = max(width * 0.001, 0.0001)
+
+        if math.isfinite(start):
+            try:
+                if domain.contains(part.start) is not sp.true:
+                    a = max(a, start + delta)
+            except Exception:
+                a = max(a, start + delta)
+
+        if math.isfinite(end):
+            try:
+                if domain.contains(part.end) is not sp.true:
+                    b = min(b, end - delta)
+            except Exception:
+                b = min(b, end - delta)
 
         if a >= b:
             continue
 
-        xs = np.linspace(a, b, 900)
+        xs = np.linspace(a, b, 1000)
         with np.errstate(all="ignore"):
             ys = np.asarray(function(xs), dtype=complex)
 
@@ -478,14 +508,10 @@ def draw_plot(expr, domain, critical_roots, asymptote_specs, xmin, xmax):
             np.isfinite(ys.real)
             & np.isfinite(ys.imag)
             & (np.abs(ys.imag) < 1e-7)
-            & (np.abs(ys.real) < 1e8)
+            & (np.abs(ys.real) < 1e10)
         )
         plotted_y = np.where(valid, ys.real, np.nan)
-
-        # Ngắt đường tại bước nhảy lớn để tránh nối xuyên qua tiệm cận.
-        jumps = np.where(np.abs(np.diff(plotted_y)) > max(20, span * 20))[0]
-        for jump in jumps:
-            plotted_y[jump + 1] = np.nan
+        samples.extend(plotted_y[np.isfinite(plotted_y)].tolist())
 
         fig.add_trace(go.Scatter(
             x=xs,
@@ -497,6 +523,30 @@ def draw_plot(expr, domain, critical_roots, asymptote_specs, xmin, xmax):
             showlegend=False,
         ))
 
+    # Chọn khung y theo phần lớn điểm đồ thị, không để điểm sát tiệm cận
+    # làm đồ thị bị ép dẹt.
+    visible_values = [value for value in samples if math.isfinite(value)]
+    extras = []
+
+    for root in critical_roots:
+        y_value = real_float(expr.subs(x, root))
+        if y_value is not None:
+            extras.append(y_value)
+
+    for kind, value in asymptote_specs:
+        if kind == "horizontal":
+            extras.append(value)
+
+    if visible_values:
+        low, high = np.percentile(visible_values, [5, 95])
+        if extras:
+            low = min(low, *extras)
+            high = max(high, *extras)
+        padding = max((high - low) * 0.12, 1.0)
+        y_range = [low - padding, high + padding]
+    else:
+        y_range = None
+
     point_x, point_y, point_labels = [], [], []
     for root in critical_roots:
         xv = real_float(root)
@@ -504,14 +554,17 @@ def draw_plot(expr, domain, critical_roots, asymptote_specs, xmin, xmax):
         if xv is not None and yv is not None and xmin <= xv <= xmax:
             point_x.append(xv)
             point_y.append(yv)
-            point_labels.append(f"({text_value(root)}; {text_value(sp.simplify(expr.subs(x, root)))})")
-
+            point_labels.append(
+                f"({sp.sstr(root)}; {sp.sstr(sp.simplify(expr.subs(x, root)))})"
+            )
             fig.add_shape(
-                type="line", x0=xv, x1=xv, y0=0, y1=yv,
+                type="line",
+                x0=xv, x1=xv, y0=0, y1=yv,
                 line=dict(color="#8993a4", width=1, dash="dot"),
             )
             fig.add_shape(
-                type="line", x0=0, x1=xv, y0=yv, y1=yv,
+                type="line",
+                x0=0, x1=xv, y0=yv, y1=yv,
                 line=dict(color="#8993a4", width=1, dash="dot"),
             )
 
@@ -529,12 +582,16 @@ def draw_plot(expr, domain, critical_roots, asymptote_specs, xmin, xmax):
     for kind, value in asymptote_specs:
         if kind == "vertical":
             fig.add_vline(
-                x=value, line_dash="dash", line_color="#8993a4",
+                x=value,
+                line_dash="dash",
+                line_color="#8993a4",
                 annotation_text=f"x = {value:g}",
             )
         elif kind == "horizontal":
             fig.add_hline(
-                y=value, line_dash="dash", line_color="#8993a4",
+                y=value,
+                line_dash="dash",
+                line_color="#8993a4",
                 annotation_text=f"y = {value:g}",
             )
         elif kind == "oblique":
@@ -546,6 +603,17 @@ def draw_plot(expr, domain, critical_roots, asymptote_specs, xmin, xmax):
                 name="Tiệm cận xiên",
                 line=dict(color="#8993a4", width=1.5, dash="dash"),
             ))
+
+    y_axis = dict(
+        title="y",
+        showgrid=True,
+        gridcolor="#e8edf4",
+        zeroline=True,
+        zerolinecolor="#27364b",
+        zerolinewidth=1.5,
+    )
+    if y_range:
+        y_axis["range"] = y_range
 
     fig.update_layout(
         title=dict(text=f"Đồ thị hàm số y = {sp.sstr(expr)}", x=0.02),
@@ -561,20 +629,10 @@ def draw_plot(expr, domain, critical_roots, asymptote_specs, xmin, xmax):
             zeroline=True,
             zerolinecolor="#27364b",
             zerolinewidth=1.5,
-            showline=True,
-            linecolor="#667085",
         ),
-        yaxis=dict(
-            title="y",
-            showgrid=True,
-            gridcolor="#e8edf4",
-            zeroline=True,
-            zerolinecolor="#27364b",
-            zerolinewidth=1.5,
-            showline=True,
-            linecolor="#667085",
-        ),
+        yaxis=y_axis,
     )
+
     st.plotly_chart(
         fig,
         use_container_width=True,
