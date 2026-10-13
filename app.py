@@ -17,7 +17,6 @@ st.set_page_config(
 
 x = sp.Symbol("x", real=True)
 
-
 # ---------- Đọc biểu thức toán an toàn ----------
 
 def parse_math(text):
