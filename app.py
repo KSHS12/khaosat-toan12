@@ -1,3 +1,4 @@
+import re
 import ast
 import html
 import math
@@ -86,7 +87,36 @@ def real_float(value):
 
 
 def text_value(value):
-    return sp.sstr(value)
+    if value is None:
+        return "?"
+    if value == sp.oo:
+        return "+∞"
+    if value == -sp.oo:
+        return "−∞"
+
+    result = sp.sstr(value)
+    result = re.sub(r"sqrt\(([^()]*)\)", r"√(\1)", result)
+    result = result.replace("**2", "²").replace("**3", "³")
+    return result
+
+def format_domain(domain):
+    if domain == sp.S.Reals:
+        return "ℝ"
+
+    parts = intervals_in(domain)
+    if not parts:
+        return text_value(domain)
+
+    result = []
+    for part in parts:
+        left_bracket = "(" if part.left_open else "["
+        right_bracket = ")" if part.right_open else "]"
+        result.append(
+            f"{left_bracket}{text_value(part.start)}, "
+            f"{text_value(part.end)}{right_bracket}"
+        )
+
+    return " ∪ ".join(result)
 
 
 def intervals_in(domain):
@@ -200,13 +230,7 @@ def make_variation_table(expr, derivative, domain, critical_roots):
     rows = [[], [], []]
 
     def pretty(value):
-        if value is None:
-            return "?"
-        return (
-            sp.sstr(value)
-            .replace("-oo", "−∞")
-            .replace("oo", "+∞")
-        )
+    return text_value(value)
 
     def add_cell(row, content, css=""):
         class_part = f' class="{css}"' if css else ""
@@ -396,7 +420,7 @@ def analyze(function_text, use_interval, left, right):
         f"Hàm số: y = {sp.sstr(expr)}",
         "",
         "1. TẬP XÁC ĐỊNH",
-        f"D = {sp.sstr(domain)}",
+        f"D = {format_domain(domain)}",
         "",
         "2. SỰ BIẾN THIÊN",
         f"Đạo hàm: y′ = {sp.sstr(derivative)}",
