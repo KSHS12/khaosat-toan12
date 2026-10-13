@@ -389,42 +389,46 @@ def analyze(function_text, use_interval, left, right):
                 vertical_asymptotes.append(point)
 
     infinity_limits = []
-    for point, label in ((-sp.oo, "−∞"), (sp.oo, "+∞")):
-        value = safe_limit(expr, point)
-        if value is not None:
-            infinity_limits.append(f"x → {label}: f(x) → {text_value(value)}")
-
-    asymptote_lines = []
-    asymptote_specs = []
-    for point in set(vertical_asymptotes):
-        asymptote_lines.append(f"Tiệm cận đứng: x = {text_value(point)}.")
-        pf = real_float(point)
-        if pf is not None:
-            asymptote_specs.append(("vertical", pf))
-
-    for point, label in ((sp.oo, "+∞"), (-sp.oo, "−∞")):
+        for point, label in ((sp.oo, "+∞"), (-sp.oo, "−∞")):
         limit_value = safe_limit(expr, point)
-        if limit_value is not None and limit_value.is_finite is True:
-            line = f"Tiệm cận ngang: y = {text_value(limit_value)}."
-        if line not in asymptote_lines:
-            asymptote_lines.append(line)
 
-            yf = real_float(limit_value)
-            if yf is not None:
-                asymptote_specs.append(("horizontal", yf))
+        if limit_value is not None and limit_value.is_finite is True:
+            horizontal_line = (
+                f"Tiệm cận ngang: y = {text_value(limit_value)}."
+            )
+            if horizontal_line not in asymptote_lines:
+                asymptote_lines.append(horizontal_line)
+
+            y_value = real_float(limit_value)
+            if y_value is not None:
+                spec = ("horizontal", y_value)
+                if spec not in asymptote_specs:
+                    asymptote_specs.append(spec)
             continue
 
         slope = safe_limit(expr / x, point)
         if slope is not None and slope.is_finite is True:
             intercept = safe_limit(expr - slope * x, point)
-            if intercept is not None and intercept.is_finite is True and sp.simplify(slope) != 0:
+
+            if (
+                intercept is not None
+                and intercept.is_finite is True
+                and sp.simplify(slope) != 0
+            ):
                 asymptote = sp.simplify(slope * x + intercept)
-                line = f"Tiệm cận xiên khi x → {label}: y = {text_value(asymptote)}."
-                if line not in asymptote_lines:
-                    asymptote_lines.append(line)
-                mf, bf = real_float(slope), real_float(intercept)
-                if mf is not None and bf is not None:
-                    asymptote_specs.append(("oblique", (mf, bf)))
+                oblique_line = (
+                    f"Tiệm cận xiên: y = {text_value(asymptote)}."
+                )
+                if oblique_line not in asymptote_lines:
+                    asymptote_lines.append(oblique_line)
+
+                slope_value = real_float(slope)
+                intercept_value = real_float(intercept)
+                if slope_value is not None and intercept_value is not None:
+                    spec = ("oblique", (slope_value, intercept_value))
+                    if spec not in asymptote_specs:
+                        asymptote_specs.append(spec)
+
 
     report = [
         f"Hàm số: y = {sp.sstr(expr)}",
