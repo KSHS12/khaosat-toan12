@@ -389,12 +389,16 @@ st.subheader("Lời giải đã lưu")
 
 try:
     response = (
-        supabase.table("saved_solutions")
-        .select("id, function_text, solution_text, created_at")
-        .eq("user_id", st.session_state.user_id)
-        .order("created_at", desc=True)
-        .limit(20)
-        .execute()
+        admin_user_id = st.secrets.get("ADMIN_USER_ID", "")
+
+query = supabase.table("saved_solutions").select(
+    "id, function_text, solution_text, created_at"
+)
+
+if st.session_state.user_id != admin_user_id:
+    query = query.eq("user_id", st.session_state.user_id)
+
+response = query.order("created_at", desc=True).limit(100).execute()
     )
 
     saved_rows = response.data or []
