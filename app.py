@@ -388,6 +388,9 @@ def analyze(function_text, use_interval, left, right):
                 vertical_asymptotes.append(point)
 
     infinity_limits = []
+    asymptote_lines = []
+    asymptote_specs = []
+
     for point, label in ((sp.oo, "+∞"), (-sp.oo, "−∞")):
         limit_value = safe_limit(expr, point)
 
