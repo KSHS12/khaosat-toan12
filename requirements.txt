@@ -2,3 +2,4 @@ streamlit
 sympy
 plotly
 numpy
+supabase
