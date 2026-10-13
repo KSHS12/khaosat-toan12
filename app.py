@@ -388,20 +388,18 @@ st.divider()
 st.subheader("Lời giải đã lưu")
 
 try:
-    response = (
-        admin_user_id = st.secrets.get("ADMIN_USER_ID", "")
+    admin_user_id = st.secrets.get("ADMIN_USER_ID", "")
 
-        query = supabase.table("saved_solutions").select(
-            "id, function_text, solution_text, created_at"
-        )
-
-        if st.session_state.user_id != admin_user_id:
-            query = query.eq("user_id", st.session_state.user_id)
-
-        response = query.order("created_at", desc=True).limit(100).execute()
+    query = supabase.table("saved_solutions").select(
+        "id, function_text, solution_text, created_at"
     )
 
+    if st.session_state.user_id != admin_user_id:
+        query = query.eq("user_id", st.session_state.user_id)
+
+    response = query.order("created_at", desc=True).limit(100).execute()
     saved_rows = response.data or []
+
     if not saved_rows:
         st.caption("Bạn chưa lưu lời giải nào.")
     else:
@@ -409,5 +407,6 @@ try:
             title = f"{row.get('function_text', 'Lời giải')} — {row.get('created_at', '')}"
             with st.expander(title):
                 st.code(row.get("solution_text", ""), language="text")
+
 except Exception as exc:
     st.error(f"Không tải được lịch sử. Hãy kiểm tra quyền RLS của bảng: {exc}")
