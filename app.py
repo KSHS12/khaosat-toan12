@@ -1,4 +1,7 @@
 import ast
+import html
+import math
+
 import numpy as np
 import plotly.graph_objects as go
 import streamlit as st
@@ -14,8 +17,9 @@ st.set_page_config(
 x = sp.Symbol("x", real=True)
 
 
+# ---------- Đọc biểu thức toán an toàn ----------
+
 def parse_math(text):
-    """Đọc biểu thức bằng AST; không thực thi mã Python người dùng nhập."""
     tree = ast.parse(text.strip().replace("^", "**"), mode="eval")
 
     def read(node):
@@ -71,50 +75,199 @@ def parse_math(text):
     return read(tree.body)
 
 
-def set_intervals(domain):
-    if isinstance(domain, sp.Interval):
-        return [domain]
-    if isinstance(domain, sp.Union):
-        result = []
-        for part in domain.args:
-            result.extend(set_intervals(part))
-        return result
-    return []
-
-
-def readable(value):
-    return sp.sstr(value)
-
-
-def real_number(value):
+def real_float(value):
     try:
         number = complex(sp.N(value))
-        if abs(number.imag) < 1e-9 and np.isfinite(number.real):
+        if abs(number.imag) < 1e-8 and math.isfinite(number.real):
             return float(number.real)
     except Exception:
         pass
     return None
 
 
-def solve_real_roots(expression, domain):
+def text_value(value):
+    return sp.sstr(value)
+
+
+def intervals_in(domain):
+    if isinstance(domain, sp.Interval):
+        return [domain]
+    if isinstance(domain, sp.Union):
+        parts = []
+        for item in domain.args:
+            parts.extend(intervals_in(item))
+        return sorted(
+            parts,
+            key=lambda part: (
+                -math.inf if part.start is -sp.oo else (real_float(part.start) or 0)
+            ),
+        )
+    return []
+
+
+def solve_roots(expression, domain):
     try:
         result = sp.solveset(expression, x, domain=domain)
-        if isinstance(result, sp.FiniteSet):
-            roots = []
-            for root in result:
-                if root.is_real is True and real_number(root) is not None:
-                    roots.append(root)
-            return sorted(roots, key=lambda root: real_number(root)), None
         if result is sp.EmptySet:
             return [], None
+        if isinstance(result, sp.FiniteSet):
+            roots = [
+                value for value in result
+                if value.is_real is True and real_float(value) is not None
+            ]
+            return sorted(roots, key=lambda value: real_float(value)), None
         return [], "SymPy không biểu diễn được toàn bộ nghiệm thành một danh sách hữu hạn."
     except Exception:
-        return [], "Không tính được đầy đủ nghiệm chính xác."
+        return [], "Chưa tính được đầy đủ nghiệm chính xác."
 
 
-def analyze(text, use_interval, left, right):
-    expr = parse_math(text)
-    derivative = sp.diff(expr, x)
+def safe_limit(expression, point, direction=None):
+    try:
+        if direction:
+            return sp.limit(expression, x, point, dir=direction)
+        return sp.limit(expression, x, point)
+    except Exception:
+        return None
+
+
+def endpoint_value(expr, domain, point, side):
+    if point in (sp.oo, -sp.oo):
+        return safe_limit(expr, point)
+    try:
+        if domain.contains(point) is sp.true:
+            return sp.simplify(expr.subs(x, point))
+    except Exception:
+        pass
+    return safe_limit(expr, point, side)
+
+
+def sign_of(expression, sample):
+    try:
+        value = complex(sp.N(expression.subs(x, sample)))
+        if abs(value.imag) > 1e-7:
+            return None
+        if value.real > 1e-9:
+            return 1
+        if value.real < -1e-9:
+            return -1
+        return 0
+    except Exception:
+        return None
+
+
+def sample_between(a, b):
+    af, bf = real_float(a), real_float(b)
+    if af is None and bf is None:
+        return 0.0
+    if af is None:
+        return bf - max(1.0, abs(bf))
+    if bf is None:
+        return af + max(1.0, abs(af))
+    return (af + bf) / 2
+
+
+def format_limit(value):
+    if value is None:
+        return "chưa tính được"
+    return text_value(value)
+
+
+# ---------- Bảng biến thiên kiểu SGK ----------
+
+def make_variation_table(expr, derivative, domain, critical_roots):
+    pieces = intervals_in(domain)
+    if not pieces:
+        return "<p>Chưa dựng được bảng biến thiên cho miền này.</p>"
+
+    critical_keys = {sp.sstr(root) for root in critical_roots}
+    rows = [[], [], []]
+
+    def add_separator():
+        for row in rows:
+            row.append('<td class="separator">║</td>')
+
+    for piece_index, part in enumerate(pieces):
+        if piece_index:
+            add_separator()
+
+        inside = []
+        for root in critical_roots:
+            try:
+                if part.contains(root) is sp.true:
+                    inside.append(root)
+            except Exception:
+                pass
+
+        points = [part.start] + sorted(inside, key=lambda value: real_float(value)) + [part.end]
+
+        for index, point in enumerate(points):
+            if point is -sp.oo:
+                x_label = "−∞"
+            elif point is sp.oo:
+                x_label = "+∞"
+            else:
+                x_label = text_value(point)
+
+            excluded = False
+            if point not in (-sp.oo, sp.oo):
+                try:
+                    excluded = domain.contains(point) is not sp.true
+                except Exception:
+                    excluded = False
+
+            rows[0].append(
+                '<td class="point">'
+                + html.escape(x_label)
+                + ("<br><small>không xác định</small>" if excluded else "")
+                + "</td>"
+            )
+
+            if sp.sstr(point) in critical_keys:
+                rows[1].append('<td class="zero">0</td>')
+            elif excluded:
+                rows[1].append('<td class="zero">||</td>')
+            else:
+                rows[1].append('<td></td>')
+
+            side = "+" if point == part.start else "-"
+            y_value = endpoint_value(expr, domain, point, side)
+            rows[2].append(
+                '<td class="value">' + html.escape(format_limit(y_value)) + "</td>"
+            )
+
+            if index < len(points) - 1:
+                next_point = points[index + 1]
+                sample = sample_between(point, next_point)
+                sign = sign_of(derivative, sample)
+                sign_text = "+" if sign == 1 else "−" if sign == -1 else "?"
+                arrow = "↗" if sign == 1 else "↘" if sign == -1 else "→"
+
+                rows[0].append('<td class="interval"></td>')
+                rows[1].append(
+                    '<td class="interval"><strong>' + sign_text + "</strong></td>"
+                )
+                rows[2].append(
+                    '<td class="interval arrow">' + arrow + "</td>"
+                )
+
+    return """
+    <div class="bbt-wrap">
+      <table class="bbt">
+        <tbody>
+          <tr><th>x</th>""" + "".join(rows[0]) + """</tr>
+          <tr><th>y′</th>""" + "".join(rows[1]) + """</tr>
+          <tr><th>y</th>""" + "".join(rows[2]) + """</tr>
+        </tbody>
+      </table>
+    </div>
+    """
+
+
+# ---------- Khảo sát ----------
+
+def analyze(function_text, use_interval, left, right):
+    expr = parse_math(function_text)
+    derivative = sp.factor(sp.diff(expr, x))
 
     try:
         domain = sp.calculus.util.continuous_domain(expr, x, sp.S.Reals)
@@ -127,93 +280,194 @@ def analyze(text, use_interval, left, right):
     if domain is sp.EmptySet:
         raise ValueError("Khoảng khảo sát không giao với tập xác định của hàm.")
 
-    critical, critical_note = solve_real_roots(derivative, domain)
-    zeros, zeros_note = solve_real_roots(expr, domain)
+    critical_roots, critical_note = solve_roots(derivative, domain)
+    x_intercepts, x_intercept_note = solve_roots(expr, domain)
 
-    lines = [
+    pieces = intervals_in(domain)
+    monotonicity = []
+    extrema = []
+
+    for part in pieces:
+        inside = []
+        for root in critical_roots:
+            try:
+                if part.contains(root) is sp.true:
+                    inside.append(root)
+            except Exception:
+                pass
+
+        boundaries = [part.start] + sorted(
+            inside, key=lambda value: real_float(value)
+        ) + [part.end]
+
+        signs = []
+        for a, b in zip(boundaries[:-1], boundaries[1:]):
+            sign = sign_of(derivative, sample_between(a, b))
+            signs.append(sign)
+            if sign == 1:
+                monotonicity.append(f"Đồng biến trên ({text_value(a)}; {text_value(b)}).")
+            elif sign == -1:
+                monotonicity.append(f"Nghịch biến trên ({text_value(a)}; {text_value(b)}).")
+
+        for i, root in enumerate(inside):
+            left_sign = signs[i] if i < len(signs) else None
+            right_sign = signs[i + 1] if i + 1 < len(signs) else None
+            y_value = sp.simplify(expr.subs(x, root))
+            if left_sign == 1 and right_sign == -1:
+                extrema.append(f"Cực đại tại x = {text_value(root)}, y = {text_value(y_value)}.")
+            elif left_sign == -1 and right_sign == 1:
+                extrema.append(f"Cực tiểu tại x = {text_value(root)}, y = {text_value(y_value)}.")
+
+    limit_lines = []
+    vertical_asymptotes = []
+
+    for part in pieces:
+        for point, direction, label in (
+            (part.start, "+", "bên phải"),
+            (part.end, "-", "bên trái"),
+        ):
+            if point in (-sp.oo, sp.oo):
+                continue
+            value = safe_limit(expr, point, direction)
+            limit_lines.append(
+                f"x → {text_value(point)} ({label}): f(x) → {format_limit(value)}"
+            )
+            if value in (sp.oo, -sp.oo):
+                vertical_asymptotes.append(point)
+
+    infinity_limits = []
+    for point, label in ((-sp.oo, "−∞"), (sp.oo, "+∞")):
+        value = safe_limit(expr, point)
+        if value is not None:
+            infinity_limits.append(f"x → {label}: f(x) → {text_value(value)}")
+
+    asymptote_lines = []
+    asymptote_specs = []
+    for point in set(vertical_asymptotes):
+        asymptote_lines.append(f"Tiệm cận đứng: x = {text_value(point)}.")
+        pf = real_float(point)
+        if pf is not None:
+            asymptote_specs.append(("vertical", pf))
+
+    for point, label in ((sp.oo, "+∞"), (-sp.oo, "−∞")):
+        limit_value = safe_limit(expr, point)
+        if limit_value is not None and limit_value.is_finite is True:
+            asymptote_lines.append(
+                f"Tiệm cận ngang khi x → {label}: y = {text_value(limit_value)}."
+            )
+            yf = real_float(limit_value)
+            if yf is not None:
+                asymptote_specs.append(("horizontal", yf))
+            continue
+
+        slope = safe_limit(expr / x, point)
+        if slope is not None and slope.is_finite is True:
+            intercept = safe_limit(expr - slope * x, point)
+            if intercept is not None and intercept.is_finite is True and sp.simplify(slope) != 0:
+                asymptote = sp.simplify(slope * x + intercept)
+                line = f"Tiệm cận xiên khi x → {label}: y = {text_value(asymptote)}."
+                if line not in asymptote_lines:
+                    asymptote_lines.append(line)
+                mf, bf = real_float(slope), real_float(intercept)
+                if mf is not None and bf is not None:
+                    asymptote_specs.append(("oblique", (mf, bf)))
+
+    report = [
         f"Hàm số: y = {sp.sstr(expr)}",
-        f"Tập xác định khi khảo sát: {sp.sstr(domain)}",
-        f"Đạo hàm: f'(x) = {sp.sstr(derivative)}",
+        "",
+        "1. TẬP XÁC ĐỊNH",
+        f"D = {sp.sstr(domain)}",
+        "",
+        "2. SỰ BIẾN THIÊN",
+        f"Đạo hàm: y′ = {sp.sstr(derivative)}",
     ]
 
-    if critical:
-        lines.append("Nghiệm f'(x) = 0: " + ", ".join(readable(r) for r in critical))
+    if critical_roots:
+        report.append(
+            "Nghiệm y′ = 0: " + ", ".join(text_value(r) for r in critical_roots) + "."
+        )
     elif critical_note:
-        lines.append(critical_note)
+        report.append(critical_note)
     else:
-        lines.append("Không có nghiệm thực f'(x) = 0 trong miền đang khảo sát.")
+        report.append("Không có nghiệm thực y′ = 0 trong miền khảo sát.")
 
-    if zeros:
-        lines.append("Giao điểm với trục Ox: " + ", ".join(
-            f"({readable(r)}, 0)" for r in zeros
-        ))
-    elif zeros_note:
-        lines.append(zeros_note)
+    report.extend(monotonicity or ["Chưa xác định được các khoảng đơn điệu."])
+    report.extend(extrema or ["Không có cực trị được xác định trong miền khảo sát."])
+
+    if limit_lines or infinity_limits:
+        report.append("Giới hạn:")
+        report.extend(limit_lines)
+        report.extend(infinity_limits)
+
+    if asymptote_lines:
+        report.append("Tiệm cận:")
+        report.extend(asymptote_lines)
     else:
-        lines.append("Không có giao điểm thực với trục Ox trong miền đang khảo sát.")
+        report.append("Không tìm thấy tiệm cận.")
+
+    report.extend(["", "3. GIAO ĐIỂM VỚI CÁC TRỤC"])
+    if x_intercepts:
+        report.append(
+            "Giao với Ox: " + "; ".join(
+                f"({text_value(root)}; 0)" for root in x_intercepts
+            )
+        )
+    elif x_intercept_note:
+        report.append(x_intercept_note)
+    else:
+        report.append("Không có giao điểm thực với Ox trong miền khảo sát.")
 
     try:
-        if sp.S.Zero in domain:
-            lines.append(f"Giao điểm với trục Oy: (0, {sp.sstr(expr.subs(x, 0))})")
+        if domain.contains(0) is sp.true:
+            report.append(f"Giao với Oy: (0; {text_value(expr.subs(x, 0))})")
     except Exception:
         pass
 
-    lines.append("")
-    lines.append("Chiều biến thiên:")
+    report.append("")
+    report.append("4. BẢNG BIẾN THIÊN")
+    bbt_html = make_variation_table(expr, derivative, domain, critical_roots)
 
-    for part in set_intervals(domain):
-        boundaries = [part.start]
-        roots_inside = []
-        for root in critical:
-            try:
-                if part.contains(root) is sp.true:
-                    roots_inside.append(root)
-            except Exception:
-                pass
-        boundaries.extend(roots_inside)
-        boundaries.append(part.end)
-
-        if len(boundaries) == 2 and sp.simplify(derivative) == 0:
-            lines.append(f"Trên {sp.sstr(part)}: hàm số không đổi.")
-            continue
-
-        for a, b in zip(boundaries[:-1], boundaries[1:]):
-            av, bv = real_number(a), real_number(b)
-            if av is None and bv is None:
-                sample = 0
-            elif av is None:
-                sample = bv - max(1, abs(bv))
-            elif bv is None:
-                sample = av + max(1, abs(av))
-            else:
-                sample = (av + bv) / 2
-
-            try:
-                sign = float(sp.N(derivative.subs(x, sample)))
-                direction = "đồng biến" if sign > 0 else "nghịch biến" if sign < 0 else "cần xét thêm"
-            except Exception:
-                direction = "chưa xác định được"
-
-            lines.append(f"Trên ({sp.sstr(a)}, {sp.sstr(b)}): {direction}.")
-
-    return expr, domain, critical, "\n".join(lines)
+    return (
+        expr,
+        derivative,
+        domain,
+        critical_roots,
+        report,
+        bbt_html,
+        asymptote_specs,
+    )
 
 
-def draw_plot(expr, domain, xmin, xmax, critical):
+# ---------- Đồ thị ----------
+
+def draw_plot(expr, domain, critical_roots, asymptote_specs, xmin, xmax):
     fig = go.Figure()
     function = sp.lambdify(x, expr, modules=["numpy"])
 
-    for part in set_intervals(domain):
-        try:
-            a = max(xmin, float(part.start)) if part.start is not -sp.oo else xmin
-            b = min(xmax, float(part.end)) if part.end is not sp.oo else xmax
-        except Exception:
-            a, b = xmin, xmax
+    for part in intervals_in(domain):
+        start = -math.inf if part.start is -sp.oo else real_float(part.start)
+        end = math.inf if part.end is sp.oo else real_float(part.end)
+
+        if start is None or end is None:
+            continue
+
+        a = max(xmin, start)
+        b = min(xmax, end)
+        if a >= b:
+            continue
+
+        span = max(b - a, 1.0)
+        if part.start not in (-sp.oo, sp.oo) and abs(a - start) < span * 1e-7:
+            if domain.contains(part.start) is not sp.true:
+                a += span * 1e-5
+        if part.end not in (-sp.oo, sp.oo) and abs(b - end) < span * 1e-7:
+            if domain.contains(part.end) is not sp.true:
+                b -= span * 1e-5
 
         if a >= b:
             continue
 
-        xs = np.linspace(a, b, 700)
+        xs = np.linspace(a, b, 900)
         with np.errstate(all="ignore"):
             ys = np.asarray(function(xs), dtype=complex)
 
@@ -224,43 +478,120 @@ def draw_plot(expr, domain, xmin, xmax, critical):
             np.isfinite(ys.real)
             & np.isfinite(ys.imag)
             & (np.abs(ys.imag) < 1e-7)
-            & (np.abs(ys.real) < 1e7)
+            & (np.abs(ys.real) < 1e8)
         )
-        plotted = np.where(valid, ys.real, np.nan)
+        plotted_y = np.where(valid, ys.real, np.nan)
+
+        # Ngắt đường tại bước nhảy lớn để tránh nối xuyên qua tiệm cận.
+        jumps = np.where(np.abs(np.diff(plotted_y)) > max(20, span * 20))[0]
+        for jump in jumps:
+            plotted_y[jump + 1] = np.nan
+
         fig.add_trace(go.Scatter(
-            x=xs, y=plotted, mode="lines", name="f(x)",
-            line=dict(color="#315de6", width=3),
+            x=xs,
+            y=plotted_y,
+            mode="lines",
+            name="Đồ thị y = f(x)",
+            line=dict(color="#3169e8", width=3),
+            connectgaps=False,
+            showlegend=False,
         ))
 
-    points_x, points_y = [], []
-    for root in critical:
-        value = real_number(root)
-        if value is not None and xmin <= value <= xmax:
-            try:
-                yvalue = real_number(expr.subs(x, root))
-                if yvalue is not None:
-                    points_x.append(value)
-                    points_y.append(yvalue)
-            except Exception:
-                pass
+    point_x, point_y, point_labels = [], [], []
+    for root in critical_roots:
+        xv = real_float(root)
+        yv = real_float(expr.subs(x, root))
+        if xv is not None and yv is not None and xmin <= xv <= xmax:
+            point_x.append(xv)
+            point_y.append(yv)
+            point_labels.append(f"({text_value(root)}; {text_value(sp.simplify(expr.subs(x, root)))})")
 
-    if points_x:
+            fig.add_shape(
+                type="line", x0=xv, x1=xv, y0=0, y1=yv,
+                line=dict(color="#8993a4", width=1, dash="dot"),
+            )
+            fig.add_shape(
+                type="line", x0=0, x1=xv, y0=yv, y1=yv,
+                line=dict(color="#8993a4", width=1, dash="dot"),
+            )
+
+    if point_x:
         fig.add_trace(go.Scatter(
-            x=points_x, y=points_y, mode="markers", name="Điểm tới hạn",
-            marker=dict(color="#e34d59", size=10),
+            x=point_x,
+            y=point_y,
+            text=point_labels,
+            mode="markers+text",
+            textposition="top right",
+            name="Điểm tới hạn",
+            marker=dict(color="#e34d59", size=10, line=dict(color="white", width=1)),
         ))
+
+    for kind, value in asymptote_specs:
+        if kind == "vertical":
+            fig.add_vline(
+                x=value, line_dash="dash", line_color="#8993a4",
+                annotation_text=f"x = {value:g}",
+            )
+        elif kind == "horizontal":
+            fig.add_hline(
+                y=value, line_dash="dash", line_color="#8993a4",
+                annotation_text=f"y = {value:g}",
+            )
+        elif kind == "oblique":
+            slope, intercept = value
+            fig.add_trace(go.Scatter(
+                x=[xmin, xmax],
+                y=[slope * xmin + intercept, slope * xmax + intercept],
+                mode="lines",
+                name="Tiệm cận xiên",
+                line=dict(color="#8993a4", width=1.5, dash="dash"),
+            ))
 
     fig.update_layout(
+        title=dict(text=f"Đồ thị hàm số y = {sp.sstr(expr)}", x=0.02),
         template="plotly_white",
-        height=480,
-        xaxis_title="x",
-        yaxis_title="y",
-        margin=dict(l=20, r=20, t=20, b=20),
+        height=520,
+        margin=dict(l=35, r=25, t=65, b=40),
+        hovermode="closest",
+        xaxis=dict(
+            title="x",
+            range=[xmin, xmax],
+            showgrid=True,
+            gridcolor="#e8edf4",
+            zeroline=True,
+            zerolinecolor="#27364b",
+            zerolinewidth=1.5,
+            showline=True,
+            linecolor="#667085",
+        ),
+        yaxis=dict(
+            title="y",
+            showgrid=True,
+            gridcolor="#e8edf4",
+            zeroline=True,
+            zerolinecolor="#27364b",
+            zerolinewidth=1.5,
+            showline=True,
+            linecolor="#667085",
+        ),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(
+        fig,
+        use_container_width=True,
+        config={
+            "displaylogo": False,
+            "scrollZoom": True,
+            "toImageButtonOptions": {
+                "format": "png",
+                "filename": "do-thi-khao-sat-ham-so",
+                "scale": 2,
+            },
+        },
+    )
 
 
-# Kết nối Supabase bằng Secrets của Streamlit.
+# ---------- Kết nối Supabase và đăng nhập ----------
+
 try:
     supabase_url = st.secrets["SUPABASE_URL"]
     supabase_key = st.secrets["SUPABASE_KEY"]
@@ -271,10 +602,8 @@ except Exception:
     st.error("Chưa đọc được Secrets. Kiểm tra SUPABASE_URL và SUPABASE_KEY trong App settings → Secrets.")
     st.stop()
 
-
 st.title("📈 Khảo sát hàm số — Toán 12")
 
-# Đăng nhập / đăng ký
 if "user_id" not in st.session_state:
     st.session_state.user_id = None
 if "user_email" not in st.session_state:
@@ -307,45 +636,54 @@ with st.sidebar:
                         "email": email,
                         "password": password,
                     })
+                    user = response.user
+                    if user:
+                        st.session_state.user_id = user.id
+                        st.session_state.user_email = user.email or email
+                        st.rerun()
+                    else:
+                        st.error("Đăng nhập chưa thành công. Hãy kiểm tra email và mật khẩu.")
                 else:
                     response = supabase.auth.sign_up({
                         "email": email,
                         "password": password,
                     })
-
-                user = response.user
-                if user:
-                    st.session_state.user_id = user.id
-                    st.session_state.user_email = user.email or email
-                    st.success("Đăng nhập thành công.")
-                    st.rerun()
-                else:
-                    st.info("Đã gửi yêu cầu tạo tài khoản. Nếu Supabase yêu cầu xác nhận email, hãy mở email để xác nhận rồi đăng nhập.")
+                    if response.session and response.user:
+                        st.session_state.user_id = response.user.id
+                        st.session_state.user_email = response.user.email or email
+                        st.rerun()
+                    else:
+                        st.success("Đã tạo tài khoản. Hãy xác nhận email nếu Supabase yêu cầu, rồi đăng nhập.")
             except Exception as exc:
                 st.error(f"Không đăng nhập/tạo tài khoản được: {exc}")
 
 if not st.session_state.user_id:
-    st.info("Hãy đăng nhập hoặc tạo tài khoản ở thanh bên để sử dụng và lưu lời giải.")
+    st.info("Hãy đăng nhập hoặc tạo tài khoản ở thanh bên để khảo sát và lưu lời giải.")
     st.stop()
 
+
+# ---------- Nhập hàm và khảo sát ----------
 
 st.subheader("Nhập hàm số")
 with st.form("analysis_form"):
     function_text = st.text_input("Nhập f(x)", value="x^3 - 3*x + 1")
     student_name = st.text_input("Họ và tên học sinh")
     class_name = st.text_input("Lớp")
+
     use_interval = st.checkbox("Chỉ khảo sát trên một khoảng cụ thể")
-    c1, c2 = st.columns(2)
-    left = c1.number_input("Đầu trái", value=-5.0)
-    right = c2.number_input("Đầu phải", value=5.0)
-    c3, c4 = st.columns(2)
-    plot_min = c3.number_input("Đồ thị: x nhỏ nhất", value=-5.0)
-    plot_max = c4.number_input("Đồ thị: x lớn nhất", value=5.0)
+    col1, col2 = st.columns(2)
+    left = col1.number_input("Đầu trái khoảng khảo sát", value=-5.0)
+    right = col2.number_input("Đầu phải khoảng khảo sát", value=5.0)
+
+    col3, col4 = st.columns(2)
+    plot_min = col3.number_input("Đồ thị: x nhỏ nhất", value=-5.0)
+    plot_max = col4.number_input("Đồ thị: x lớn nhất", value=5.0)
+
     submitted = st.form_submit_button("Khảo sát hàm số")
 
 if submitted:
     if plot_min >= plot_max:
-        st.error("Giá trị x nhỏ nhất của đồ thị phải nhỏ hơn giá trị lớn nhất.")
+        st.error("Giá trị x nhỏ nhất phải nhỏ hơn giá trị x lớn nhất.")
     elif use_interval and left >= right:
         st.error("Đầu trái của khoảng khảo sát phải nhỏ hơn đầu phải.")
     else:
@@ -364,26 +702,76 @@ request = st.session_state.get("analysis_request")
 
 if request:
     try:
-        expr, domain, critical, report = analyze(
+        (
+            expr,
+            derivative,
+            domain,
+            critical_roots,
+            report,
+            bbt_html,
+            asymptote_specs,
+        ) = analyze(
             request["function_text"],
             request["use_interval"],
             request["left"],
             request["right"],
         )
 
-        st.subheader("Kết quả khảo sát")
-        st.code(report, language="text")
-        st.subheader("Đồ thị")
-        draw_plot(expr, domain, request["plot_min"], request["plot_max"], critical)
+        st.markdown("### 1. Tập xác định và sự biến thiên")
+        st.code("\n".join(report[:2]) if len(report) > 1 else report[0], language="text")
+
+        st.markdown("### 2. Các bước khảo sát")
+        st.code("\n".join(report[2:]), language="text")
+
+        st.markdown("### 3. Bảng biến thiên đầy đủ")
+        st.markdown(
+            """
+            <style>
+            .bbt-wrap { overflow-x: auto; margin: 12px 0 22px; }
+            table.bbt {
+              border-collapse: collapse; min-width: 620px; width: 100%;
+              font-family: Georgia, serif; background: white;
+              border: 1px solid #8490a0; border-radius: 8px;
+            }
+            .bbt th, .bbt td {
+              border: 1px solid #c4cad3; text-align: center;
+              padding: 12px 10px; min-width: 65px;
+            }
+            .bbt th { background: #f2f5fa; width: 58px; }
+            .bbt .interval { min-width: 75px; color: #44516a; }
+            .bbt .arrow { font-size: 25px; color: #315de6; }
+            .bbt .point { font-weight: 600; }
+            .bbt .zero { font-weight: 700; }
+            .bbt .separator {
+              border-left: 4px double #505a69;
+              border-right: 4px double #505a69;
+              min-width: 18px; padding: 4px;
+            }
+            .bbt .value { min-width: 75px; }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.markdown(bbt_html, unsafe_allow_html=True)
+
+        st.markdown("### 4. Đồ thị")
+        draw_plot(
+            expr,
+            domain,
+            critical_roots,
+            asymptote_specs,
+            request["plot_min"],
+            request["plot_max"],
+        )
 
         if st.button("Lưu lời giải vào tài khoản"):
-            if not request.get("student_name") or not request.get("class_name"):
-                st.warning("Hãy nhập họ tên học sinh và lớp trước khi lưu.")
+            if not request["student_name"] or not request["class_name"]:
+                st.warning("Hãy nhập họ tên học sinh và lớp ở phía trên rồi khảo sát lại.")
             else:
                 supabase.table("saved_solutions").insert({
                     "user_id": st.session_state.user_id,
                     "function_text": request["function_text"],
-                    "solution_text": report,
+                    "solution_text": "\n".join(report),
                     "student_name": request["student_name"],
                     "class_name": request["class_name"],
                 }).execute()
@@ -393,14 +781,15 @@ if request:
         st.error(f"Không khảo sát được hàm số: {exc}")
 
 
+# ---------- Lịch sử riêng từng học sinh; tài khoản quản trị xem tất cả ----------
+
 st.divider()
 st.subheader("Lời giải đã lưu")
 
 try:
     admin_user_id = st.secrets.get("ADMIN_USER_ID", "")
-
     query = supabase.table("saved_solutions").select(
-        "id, function_text, solution_text, created_at"
+        "id, function_text, solution_text, created_at, student_name, class_name"
     )
 
     if st.session_state.user_id != admin_user_id:
@@ -413,9 +802,14 @@ try:
         st.caption("Bạn chưa lưu lời giải nào.")
     else:
         for row in saved_rows:
-            title = f"{row.get('function_text', 'Lời giải')} — {row.get('created_at', '')}"
+            title = (
+                f"{row.get('student_name') or 'Chưa có tên'} — "
+                f"{row.get('class_name') or 'Chưa có lớp'} — "
+                f"{row.get('function_text') or 'Lời giải'}"
+            )
             with st.expander(title):
+                st.caption(f"Thời điểm lưu: {row.get('created_at', '')}")
                 st.code(row.get("solution_text", ""), language="text")
 
 except Exception as exc:
-    st.error(f"Không tải được lịch sử. Hãy kiểm tra quyền RLS của bảng: {exc}")
+    st.error(f"Không tải được lịch sử: {exc}")
