@@ -405,9 +405,10 @@ def analyze(function_text, use_interval, left, right):
     for point, label in ((sp.oo, "+∞"), (-sp.oo, "−∞")):
         limit_value = safe_limit(expr, point)
         if limit_value is not None and limit_value.is_finite is True:
-            asymptote_lines.append(
-                f"Tiệm cận ngang khi x → {label}: y = {text_value(limit_value)}."
-            )
+        line = f"Tiệm cận ngang: y = {text_value(limit_value)}."
+        if line not in asymptote_lines:
+            asymptote_lines.append(line)
+
             yf = real_float(limit_value)
             if yf is not None:
                 asymptote_specs.append(("horizontal", yf))
