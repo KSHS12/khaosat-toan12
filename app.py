@@ -389,7 +389,7 @@ def analyze(function_text, use_interval, left, right):
                 vertical_asymptotes.append(point)
 
     infinity_limits = []
-        for point, label in ((sp.oo, "+∞"), (-sp.oo, "−∞")):
+    for point, label in ((sp.oo, "+∞"), (-sp.oo, "−∞")):
         limit_value = safe_limit(expr, point)
 
         if limit_value is not None and limit_value.is_finite is True:
