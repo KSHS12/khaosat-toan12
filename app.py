@@ -332,6 +332,8 @@ if not st.session_state.user_id:
 st.subheader("Nhập hàm số")
 with st.form("analysis_form"):
     function_text = st.text_input("Nhập f(x)", value="x^3 - 3*x + 1")
+    student_name = st.text_input("Họ và tên học sinh")
+    class_name = st.text_input("Lớp")
     use_interval = st.checkbox("Chỉ khảo sát trên một khoảng cụ thể")
     c1, c2 = st.columns(2)
     left = c1.number_input("Đầu trái", value=-5.0)
@@ -349,6 +351,8 @@ if submitted:
     else:
         st.session_state.analysis_request = {
             "function_text": function_text,
+            "student_name": student_name.strip(),
+            "class_name": class_name.strip(),
             "use_interval": use_interval,
             "left": left,
             "right": right,
@@ -373,12 +377,17 @@ if request:
         draw_plot(expr, domain, request["plot_min"], request["plot_max"], critical)
 
         if st.button("Lưu lời giải vào tài khoản"):
-            supabase.table("saved_solutions").insert({
-                "user_id": st.session_state.user_id,
-                "function_text": request["function_text"],
-                "solution_text": report,
-            }).execute()
-            st.success("Đã lưu lời giải.")
+            if not request.get("student_name") or not request.get("class_name"):
+                st.warning("Hãy nhập họ tên học sinh và lớp trước khi lưu.")
+            else:
+                supabase.table("saved_solutions").insert({
+                    "user_id": st.session_state.user_id,
+                    "function_text": request["function_text"],
+                    "solution_text": report,
+                    "student_name": request["student_name"],
+                    "class_name": request["class_name"],
+                }).execute()
+                st.success("Đã lưu lời giải kèm họ tên và lớp.")
 
     except Exception as exc:
         st.error(f"Không khảo sát được hàm số: {exc}")
